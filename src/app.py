@@ -8,9 +8,7 @@ from urllib.parse import urlparse
 
 from flask import Flask, request, redirect, jsonify, send_file, render_template, abort
 
-# -----------------------------
-# Config
-# -----------------------------
+
 DB_PATH = os.environ.get("DB_PATH", "data.sqlite3")
 DEFAULT_BASE_URL = os.environ.get("BASE_URL", None)  # byggs från request om None
 RATE_LIMIT_WINDOW_SEC = 60
@@ -21,13 +19,12 @@ RESERVED_ALIASES = {"api", "stats", "static", "favicon.ico", ""}
 app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
 
-# Enkel in-memory rate limiting (best effort)
 _rate_bucket = {}
 
 # -----------------------------
 # Helpers
 # -----------------------------
-ALPHABET = string.digits + string.ascii_letters  # 0-9A-Za-z (62)
+ALPHABET = string.digits + string.ascii_letters  
 
 
 def base62_encode(n: int) -> str:
