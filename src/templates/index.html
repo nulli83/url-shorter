@@ -1,50 +1,158 @@
 <!doctype html>
-<html lang="sv">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>shorter</title>
+<title>Shorter — simple URL shortener</title>
 <style>
-body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;max-width:720px;margin:40px auto;padding:0 20px}
-form{display:flex;gap:8px;flex-wrap:wrap}
-input,button{padding:10px;font-size:16px}
-.row{display:flex;gap:8px;flex-wrap:wrap}
-.result{margin-top:16px;padding:12px;background:#f5f5f5;border-radius:10px}
-code{word-break:break-all}
+:root { --bg:#0b0b0c; --fg:#eaeaea; --muted:#b8b8b8; --card:#161618; --accent:#4ea7ff; --ok:#3bd16f; --err:#ff6363; --border:#27272a; }
+@media (prefers-color-scheme: light) {
+  :root { --bg:#ffffff; --fg:#0b0b0c; --muted:#5a5a62; --card:#f7f7f8; --accent:#0b66ff; --ok:#16a34a; --err:#dc2626; --border:#e5e7eb; }
+}
+* { box-sizing: border-box; }
+body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:var(--fg); margin:0; }
+.container { max-width:720px; margin:48px auto; padding:0 20px; }
+h1 { font-size:28px; margin:0 0 8px; letter-spacing:.2px; }
+p.lead { margin:0 0 20px; color:var(--muted); }
+.card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; }
+form .row { display:flex; gap:8px; flex-wrap:wrap; }
+label { font-size:14px; color:var(--muted); display:block; margin-bottom:6px; }
+input, button { font-size:16px; padding:12px 12px; border-radius:10px; border:1px solid var(--border); background:#fff0; color:var(--fg); }
+input { width:100%; }
+input::placeholder { color:var(--muted); }
+button { background:var(--accent); color:white; border:0; cursor:pointer; }
+button[disabled] { opacity:.7; cursor:not-allowed; }
+.small { font-size:12px; color:var(--muted); margin-top:6px; }
+.result { margin-top:16px; display:none; }
+.result.show { display:block; }
+.result .ok { color:var(--ok); font-weight:600; }
+.result .err { color:var(--err); font-weight:600; }
+.list { display:grid; gap:8px; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+.linkbox { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.copy { background:#0000; color:var(--accent); border:1px solid var(--accent); padding:10px 12px; border-radius:10px; }
+.hr { height:1px; background:var(--border); margin:12px 0; }
+a { color:var(--accent); text-decoration:underline; text-underline-offset:2px; }
+footer { margin-top:28px; color:var(--muted); font-size:12px; text-align:center; }
 </style>
 </head>
 <body>
-<h1>Url/Short</h1>
-<p>Paste in a an link <strong>http(s)</strong>-URL. optionally: Choose a own alias. For example  <em>My-Name</em>).</p>
-<form id="shortenForm">
-<input type="url" name="url" placeholder="https://exempel.se/view/my/link" required style="flex:1" />
-<input type="text" name="alias" placeholder="alias" />
-<button type="submit">Shorten</button>
-</form>
-<div id="out" class="result" style="display:none"></div>
+<main class="container">
+  <header>
+    <h1>Shorter</h1>
+    <p class="lead">Turn a long link into a clean, short one. Optionally pick your own alias.</p>
+  </header>
 
+  <section class="card" aria-labelledby="shorten-title">
+    <form id="shortenForm" novalidate>
+      <div class="row">
+        <div style="flex:1 1 420px; min-width:260px">
+          <label for="url">Link to shorten</label>
+          <input id="url" name="url" type="url" inputmode="url" autocomplete="off"
+                 placeholder="https://example.com/some/very/long/path?with=query"
+                 required>
+          <div class="small">Must be an <span class="mono">http(s)://</span> URL.</div>
+        </div>
+        <div style="flex:1 1 180px; min-width:160px">
+          <label for="alias">Custom alias (optional)</label>
+          <input id="alias" name="alias" type="text" maxlength="48" autocomplete="off"
+                 placeholder="my-name">
+          <div class="small">Allowed: A–Z, a–z, 0–9, <span class="mono">-</span>, <span class="mono">_</span></div>
+        </div>
+        <div style="flex:0 0 120px; align-self:flex-end">
+          <button id="submitBtn" type="submit">Shorten</button>
+        </div>
+      </div>
+      <div id="result" class="result" role="status" aria-live="polite"></div>
+    </form>
+  </section>
+
+  <footer>
+    Pro tip: click the short link to focus it, then press <span class="mono">Ctrl/Cmd+C</span> to copy.
+  </footer>
+</main>
 
 <script>
 const form = document.getElementById('shortenForm');
-const out = document.getElementById('out');
-form.addEventListener('submit', async (e) => {
-e.preventDefault();
-const data = new FormData(form);
-const res = await fetch('/shorten', { method:'POST', body: data });
-const json = await res.json();
-if(!res.ok){
-out.style.display='block';
-out.innerHTML = `<strong>Wrong:</strong> ${json.error || 'Something went wrong.'}`;
-return;
+const btn  = document.getElementById('submitBtn');
+const box  = document.getElementById('result');
+const urlInput = document.getElementById('url');
+const aliasInput = document.getElementById('alias');
+
+function show(html) {
+  box.innerHTML = html;
+  box.classList.add('show');
 }
-out.style.display='block';
-out.innerHTML = `
-<div>
-<div><strong>Short link::</> <code>${json.short_url}</code></div>
-<div><strong>Original:</strong>strong <code>${json.long_url}</code></div>
-<div><a target="_blank" href="/stats/${json.code}">View statistics</a> ·
-<a target="_blank" href="/api/qr/${json.code}">QR‑code</a></div>
-</div>`;
+function toText(s){ return document.createTextNode(String(s ?? '')); }
+function isHttpUrl(s){
+  try{ const u=new URL(s); return u.protocol==='http:'||u.protocol==='https:'; }catch{ return false; }
+}
+async function copyText(text){
+  try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const raw = urlInput.value.trim();
+  if(!isHttpUrl(raw)){
+    show(`<div class="err">That doesn’t look like a valid http(s) link.</div>`);
+    urlInput.focus();
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Shortening…';
+
+  try {
+    const data = new FormData(form);
+    const res  = await fetch('/shorten', { method:'POST', body:data });
+    const json = await res.json().catch(() => ({}));
+
+    if(!res.ok){
+      const msg = json.error || 'Something went wrong. Please try again.';
+      show(`<div class="err">Error: ${msg}</div>`);
+      return;
+    }
+
+    const shortUrl = json.short_url;
+    const code = json.code;
+    const longUrl = json.long_url;
+
+    show(`
+      <div class="card list">
+        <div class="ok">Your short link is ready</div>
+        <div class="linkbox">
+          <input id="shortOut" class="mono" style="flex:1; min-width:200px" value="${shortUrl}" readonly>
+          <button class="copy" id="copyBtn" type="button">Copy</button>
+          <a href="${shortUrl}" target="_blank" rel="noopener">Open</a>
+        </div>
+        <div>Original: <code>${longUrl}</code></div>
+        <div class="hr"></div>
+        <div>
+          <a href="/stats/${code}" target="_blank" rel="noopener">View stats</a>
+          ·
+          <a href="/api/qr/${code}" target="_blank" rel="noopener">QR code</a>
+        </div>
+      </div>
+    `);
+
+    const out = document.getElementById('shortOut');
+    const copyBtn = document.getElementById('copyBtn');
+    out.addEventListener('focus', () => out.select());
+    out.addEventListener('click', () => out.select());
+    copyBtn.addEventListener('click', async () => {
+      const ok = await copyText(shortUrl);
+      copyBtn.textContent = ok ? 'Copied!' : 'Copy';
+      if(ok){ setTimeout(()=>copyBtn.textContent='Copy', 1200); }
+    });
+
+  } catch (err) {
+    show(`<div class="err">Network error. Please check your connection and try again.</div>`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Shorten';
+  }
 });
 </script>
 </body>
