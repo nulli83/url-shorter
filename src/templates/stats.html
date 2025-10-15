@@ -11,12 +11,12 @@ code{word-break:break-all}
 </style>
 </head>
 <body>
-<h1>Statistik</h1>
-<p><strong>Kod:</strong> <code>{{ code }}</code></p>
-<p><strong>Kort länk:</strong> <a href="{{ base_url }}/{{ code }}" target="_blank">{{ base_url }}/{{ code }}</a></p>
+<h1>statistics</h1>
+<p><strong>Code:</strong> <code>{{ code }}</code></p>
+<p><strong>Short link:</strong> <a href="{{ base_url }}/{{ code }}" target="_blank">{{ base_url }}/{{ code }}</a></p>
 <p><strong>Original:</strong> <code>{{ long_url }}</code></p>
-<p><strong>Skapad:</strong> <code>{{ created_at }}</code></p>
-<p><strong>Träffar:</strong> <code>{{ hits }}</code></p>
+<p><strong>Created:</strong> <code>{{ created_at }}</code></p>
+<p><strong>Hits:</strong> <code>{{ hits }}</code></p>
 <div class="row">
 <img src="/api/qr/{{ code }}" alt="QR" width="160" height="160" />
 <span>Scan the QR to open the short link.</span>
