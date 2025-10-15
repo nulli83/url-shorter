@@ -14,12 +14,12 @@ code{word-break:break-all}
 </style>
 </head>
 <body>
-<h1>URL‑förkortare</h1>
-<p>Klistra in en <strong>http(s)</strong>-URL. Valfritt: välj ett eget alias (t.ex. <em>mitt-namn</em>).</p>
+<h1>Url/Short</h1>
+<p>Paste in a an link <strong>http(s)</strong>-URL. optionally: Choose a own alias. For example  <em>My-Name</em>).</p>
 <form id="shortenForm">
-<input type="url" name="url" placeholder="https://exempel.se/min/långa/länk" required style="flex:1" />
-<input type="text" name="alias" placeholder="alias (valfritt)" />
-<button type="submit">Förkorta</button>
+<input type="url" name="url" placeholder="https://exempel.se/view/my/link" required style="flex:1" />
+<input type="text" name="alias" placeholder="alias" />
+<button type="submit">Shorten</button>
 </form>
 <div id="out" class="result" style="display:none"></div>
 
@@ -34,16 +34,16 @@ const res = await fetch('/shorten', { method:'POST', body: data });
 const json = await res.json();
 if(!res.ok){
 out.style.display='block';
-out.innerHTML = `<strong>Fel:</strong> ${json.error || 'Något gick fel'}`;
+out.innerHTML = `<strong>Wrong:</strong> ${json.error || 'Something went wrong.'}`;
 return;
 }
 out.style.display='block';
 out.innerHTML = `
 <div>
-<div><strong>Kort länk:</strong> <code>${json.short_url}</code></div>
-<div><strong>Original:</strong> <code>${json.long_url}</code></div>
-<div><a target="_blank" href="/stats/${json.code}">Visa statistik</a> ·
-<a target="_blank" href="/api/qr/${json.code}">QR‑kod</a></div>
+<div><strong>Short link::</> <code>${json.short_url}</code></div>
+<div><strong>Original:</strong>strong <code>${json.long_url}</code></div>
+<div><a target="_blank" href="/stats/${json.code}">View statistics</a> ·
+<a target="_blank" href="/api/qr/${json.code}">QR‑code</a></div>
 </div>`;
 });
 </script>
