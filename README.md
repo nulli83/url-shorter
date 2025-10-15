@@ -7,7 +7,7 @@ Used for short url, only work on 1 device. App will be supported way later.
 # Run with Linux & windows
 Git clone https://github.com/nulli83/url-shorter/
 cd url-shorter
-* Download the packages in requirements.txt *
+* Download the packages in requirements.txt 
 
 py app.py or python3 app.py
 
