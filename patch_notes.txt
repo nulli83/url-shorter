@@ -1,0 +1,2 @@
+2025-10-15:
+- Created a folder named "templates" so the app.py could run.
