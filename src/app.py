@@ -1,41 +1,52 @@
 import os
+import re
 import sqlite3
-import string
-import time
-import socket
+import uuid
 from datetime import datetime
 from urllib.parse import urlparse
 
 from flask import Flask, request, redirect, jsonify, send_file, render_template, abort
 
-
 DB_PATH = os.environ.get("DB_PATH", "data.sqlite3")
-DEFAULT_BASE_URL = os.environ.get("BASE_URL", None)  # byggs från request om None
-RATE_LIMIT_WINDOW_SEC = 60
-RATE_LIMIT_MAX_REQ = 30  # per IP per fönster
+DEFAULT_BASE_URL = os.environ.get("BASE_URL", None)
 
 RESERVED_ALIASES = {"api", "stats", "static", "favicon.ico", ""}
 
 app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
 
-_rate_bucket = {}
 
-# -----------------------------
-# Helpers
-# -----------------------------
-ALPHABET = string.digits + string.ascii_letters  
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
-def base62_encode(n: int) -> str:
-    if n == 0:
-        return ALPHABET[0]
-    s = []
-    b = len(ALPHABET)
-    while n > 0:
-        n, r = divmod(n, b)
-        s.append(ALPHABET[r])
-    return "".join(reversed(s))
+def table_exists(conn, name: str) -> bool:
+    cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,))
+    return cur.fetchone() is not None
+
+
+def init_db():
+    conn = get_db()
+    try:
+        if not table_exists(conn, "urls"):
+            conn.execute(
+                """
+                CREATE TABLE urls (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    code TEXT UNIQUE,
+                    long_url TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    hits INTEGER NOT NULL DEFAULT 0
+                );
+                """
+            )
+            conn.execute("CREATE INDEX idx_urls_code ON urls(code);")
+            conn.execute("CREATE INDEX idx_urls_long ON urls(long_url);")
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def is_valid_url(url: str) -> bool:
@@ -46,91 +57,26 @@ def is_valid_url(url: str) -> bool:
         return False
 
 
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_db():
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS urls (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT UNIQUE,
-            long_url TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            hits INTEGER NOT NULL DEFAULT 0
-        );
-        """
-    )
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_urls_code ON urls(code);")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_urls_long ON urls(long_url);")
-    conn.commit()
-    conn.close()
-
-
-def rate_limited(ip: str) -> bool:
-    now = int(time.time())
-    window = now // RATE_LIMIT_WINDOW_SEC
-    key = (ip, window)
-    count = _rate_bucket.get(key, 0)
-    if count >= RATE_LIMIT_MAX_REQ:
-        return True
-    _rate_bucket[key] = count + 1
-    # rensa gamla buckets ibland (best effort)
-    if len(_rate_bucket) > 5000:
-        old_windows = {k for k in _rate_bucket if k[1] < window}
-        for k in old_windows:
-            _rate_bucket.pop(k, None)
-    return False
-
-
-def client_ip():
-    xff = request.headers.get("X-Forwarded-For", "")
-    return xff.split(",")[0].strip() if xff else request.remote_addr
-
-
 def base_url():
     if DEFAULT_BASE_URL:
-        return DEFAULT_BASE_URL.rstrip("/")
-    scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
-    host = request.headers.get("X-Forwarded-Host", request.host)
-    return f"{scheme}://{host}".rstrip("/")
+        return str(DEFAULT_BASE_URL).rstrip("/")
+    return request.url_root.rstrip("/")
 
 
-def pick_free_port(host: str, candidates=None) -> int:
-    candidates = candidates or []
-    for p in candidates:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                s.bind((host, p))
-                return p
-            except OSError:
-                continue
-    # välj OS-tilldelad port
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((host, 0))
-        return s.getsockname()[1]
+def generate_unique_code(cur, length: int = 8) -> str:
+    for _ in range(20):
+        c = uuid.uuid4().hex[:length]
+        cur.execute("SELECT 1 FROM urls WHERE code=?", (c,))
+        if not cur.fetchone():
+            return c
+    return uuid.uuid4().hex
 
 
-# -----------------------------
-# Routes
-# -----------------------------
-@app.get("/")
-def home():
+def handle_home():
     return render_template("index.html")
 
 
-@app.post("/shorten")
-def shorten():
-    ip = client_ip()
-    if rate_limited(ip):
-        return jsonify({"error": "Rate limit exceeded. Try again later."}), 429
-
+def handle_shorten():
     data = request.get_json(silent=True) or request.form
     long_url = (data.get("url") or "").strip()
     alias = (data.get("alias") or "").strip() or None
@@ -139,94 +85,84 @@ def shorten():
         return jsonify({"error": "Invalid URL. Only http(s) URLs are allowed."}), 400
 
     conn = get_db()
-    cur = conn.cursor()
+    try:
+        cur = conn.cursor()
 
-    # Custom alias?
-    if alias:
-        # basic allowlist: [0-9A-Za-z-_]
-        allowed = set(string.ascii_letters + string.digits + "-_")
-        if alias.lower() in RESERVED_ALIASES or not all(ch in allowed for ch in alias):
-            conn.close()
-            return jsonify({"error": "Alias may only contain A-Za-z0-9-_ and not be reserved"}), 400
-        # check unique
-        cur.execute("SELECT 1 FROM urls WHERE code=?", (alias,))
-        if cur.fetchone():
-            conn.close()
-            return jsonify({"error": "Alias already taken."}), 409
-        code = alias
+        if alias:
+            allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+            if alias.lower() in RESERVED_ALIASES or not all(ch in allowed for ch in alias):
+                return jsonify({"error": "Alias may only contain A-Za-z0-9-_ and not be reserved"}), 400
+            cur.execute("SELECT 1 FROM urls WHERE code=?", (alias,))
+            if cur.fetchone():
+                return jsonify({"error": "Alias already taken."}), 409
+            code = alias
+        else:
+            code = generate_unique_code(cur)
+
         cur.execute(
             "INSERT INTO urls (code, long_url, created_at, hits) VALUES (?, ?, ?, 0)",
             (code, long_url, datetime.utcnow().isoformat() + "Z"),
         )
         conn.commit()
-    else:
-        # generate from ID using base62
-        cur.execute(
-            "INSERT INTO urls (long_url, created_at, hits) VALUES (?, ?, 0)",
-            (long_url, datetime.utcnow().isoformat() + "Z"),
-        )
-        new_id = cur.lastrowid
-        code = base62_encode(new_id)
-        cur.execute("UPDATE urls SET code=? WHERE id=?", (code, new_id))
-        conn.commit()
+    finally:
+        conn.close()
 
-    conn.close()
     short = f"{base_url()}/{code}"
     return jsonify({"code": code, "short_url": short, "long_url": long_url}), 201
 
 
-@app.get("/<code>")
-def resolve(code: str):
+def handle_resolve(code: str):
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT id, long_url FROM urls WHERE code=?", (code,))
-    row = cur.fetchone()
-    if not row:
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id, long_url, hits FROM urls WHERE code=?", (code,))
+        row = cur.fetchone()
+        if not row:
+            abort(404)
+        new_hits = int(row["hits"] or 0) + 1
+        cur.execute("UPDATE urls SET hits=? WHERE id=?", (new_hits, row["id"]))
+        conn.commit()
+        target = row["long_url"]
+    finally:
         conn.close()
-        abort(404)
-    # Atomisk increment
-    cur.execute("UPDATE urls SET hits = hits + 1 WHERE id=?", (row[0],))
-    conn.commit()
-    conn.close()
-    return redirect(row[1], code=302)
+    return redirect(target, code=302)
 
 
-@app.get("/api/info/<code>")
-def info(code: str):
+def handle_info(code: str):
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT code, long_url, created_at, hits FROM urls WHERE code=?",
-        (code,),
-    )
-    row = cur.fetchone()
-    conn.close()
-    if not row:
-        return jsonify({"error": "Not found"}), 404
-    return jsonify({
-        "code": row[0],
-        "long_url": row[1],
-        "created_at": row[2],
-        "hits": row[3],
-        "short_url": f"{base_url()}/{row[0]}",
-    })
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT code, long_url, created_at, hits FROM urls WHERE code=?",
+            (code,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify({
+            "code": row["code"],
+            "long_url": row["long_url"],
+            "created_at": row["created_at"],
+            "hits": row["hits"],
+            "short_url": f"{base_url()}/{row['code']}",
+        })
+    finally:
+        conn.close()
 
 
-@app.get("/api/qr/<code>")
-def qr(code: str):
-    # lazy import to avoid heavy deps on cold start
+def handle_qr(code: str):
     import io
     import qrcode
 
     short_url = f"{base_url()}/{code}"
-    # verify exists
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT 1 FROM urls WHERE code=?", (code,))
-    if not cur.fetchone():
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM urls WHERE code=?", (code,))
+        if not cur.fetchone():
+            return jsonify({"error": "Not found"}), 404
+    finally:
         conn.close()
-        return jsonify({"error": "Not found"}), 404
-    conn.close()
 
     img = qrcode.make(short_url)
     buf = io.BytesIO()
@@ -237,44 +173,66 @@ def qr(code: str):
     return resp
 
 
-@app.get("/stats/<code>")
-def stats_page(code: str):
+def handle_stats_page(code: str):
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT code, long_url, created_at, hits FROM urls WHERE code=?",
-        (code,),
-    )
-    row = cur.fetchone()
-    conn.close()
-    if not row:
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT code, long_url, created_at, hits FROM urls WHERE code=?",
+            (code,),
+        )
+        row = cur.fetchone()
+        if not row:
+            abort(404)
+        return render_template(
+            "stats.html",
+            code=row["code"],
+            long_url=row["long_url"],
+            created_at=row["created_at"],
+            hits=row["hits"],
+            base_url=base_url(),
+        )
+    finally:
+        conn.close()
+
+
+class Router:
+    def __init__(self):
+        self.routes = []
+
+    def add(self, method: str, pattern: str, handler):
+        self.routes.append((method.upper(), re.compile(f"^{pattern}$"), handler))
+
+    def dispatch(self, method: str, path: str):
+        for m, rx, handler in self.routes:
+            if m == method.upper():
+                match = rx.match(path)
+                if match:
+                    return handler, match.groupdict()
+        return None, None
+
+
+router = Router()
+router.add("GET", r"", handle_home)
+router.add("POST", r"shorten", handle_shorten)
+router.add("GET", r"api/info/(?P<code>[^/]+)", handle_info)
+router.add("GET", r"api/qr/(?P<code>[^/]+)", handle_qr)
+router.add("GET", r"stats/(?P<code>[^/]+)", handle_stats_page)
+router.add("GET", r"(?P<code>[^/]+)", handle_resolve)
+
+
+@app.route("/", defaults={"path": ""}, methods=["GET", "POST"])
+@app.route("/<path:path>", methods=["GET", "POST"])
+def _catch_all(path):
+    handler, params = router.dispatch(request.method, path)
+    if not handler:
         abort(404)
-    return render_template(
-        "stats.html",
-        code=row[0], long_url=row[1], created_at=row[2], hits=row[3], base_url=base_url()
-    )
+    return handler(**(params or {}))
 
 
-# -----------------------------
-# Entrypoint (robust på Windows-portar)
-# -----------------------------
 if __name__ == "__main__":
     os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
     init_db()
-
     host = os.environ.get("HOST", "127.0.0.1")
-    # Prova specifik port först (om satt), annars vår kandidatlista
-    env_port = os.environ.get("PORT")
-    candidates = []
-    if env_port and str(env_port).isdigit():
-        candidates.append(int(env_port))
-    candidates += [8000, 8080, 8888, 5001]
-
-    try:
-        port = pick_free_port(host, candidates)
-        app.run(host=host, port=port, debug=False, use_reloader=False)
-    except OSError:
-        # Fallback till 0.0.0.0 och ny port (t.ex. när bindning till loopback är blockerad)
-        host = "0.0.0.0"
-        port = pick_free_port(host, candidates)
-        app.run(host=host, port=port, debug=False, use_reloader=False)
+    port = int(os.environ.get("PORT", "8000"))
+    app.run(host=host, port=port, debug=False, use_reloader=False)
