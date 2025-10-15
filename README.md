@@ -1,44 +1,59 @@
-# Shorter: Minimalist URL Shortener
+# 🔗 URL Shorter
 
-Shorter is a small, fast tool built with **Python/Flask** and **SQLite** to transform long URLs into clean, short links. The application focuses on **low latency** and **minimal dependencies**.
+A small and simple URL shortener built with **Python + Flask**.
+It takes those long, messy links and turns them into short, clean ones that are way easier to share with friends, in messages, or anywhere online.
 
-\<img width="1345" height="447" alt="preview" src="[https://github.com/user-attachments/assets/259270a6-f68d-4a2b-8665-dc61d9c4814b](https://github.com/user-attachments/assets/259270a6-f68d-4a2b-8665-dc61d9c4814b)" /\>
+Right now, it runs **locally on your machine** – but I’m planning to add support for multiple devices and hosting in the future.
 
------
+---
 
-##  Core Features
+## 🚀 How to run it
 
-  * **URL Shortening:** Shortens all valid `http(s)` links.
-  * **Custom Aliases:** Supports user-defined aliases (e.g., `/my-project`).
-  * **Minimalist Database:** Uses built-in **SQLite** to manage all data, eliminating the need for an external database server.
-  * **Statistics:** Tracks clicks (hits) for every shortened link.
-  * **Dynamic QR:** Generates QR codes directly via an API endpoint.
+1. Clone the repo and go into the project folder:
 
------
+```bash
+git clone https://github.com/nulli83/url-shorter.git
+cd url-shorter
+```
 
-##  Architecture & Design Choices
+2. Install the required packages:
 
-Unlike many simple URL shorteners, Shorter uses a **reg-ex based router** within the Flask application (instead of standard decorators). This provides full control over URL matching and ensures a clean separation between application logic and Flask’s routing layer.
+```bash
+pip install -r requirements.txt
+```
 
-The code uses a random, collision-protected **UUID string** to generate short codes, instead of the more complex Base62 algorithms often found in similar projects.
+3. Start the app:
 
------
+```bash
+python app.py
+# or
+python3 app.py
+```
 
-##  Installation & Running
+4. Then open your browser and visit:
 
-**Prerequisites:** Python 3.8+
+```
+http://127.0.0.1:8000
+```
 
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/nulli83/url-shorter.git
-    cd url-shorter
-    ```
-2.  Install dependencies (including Flask and qrcode):
-    ```bash
-    pip install -r requirements.txt
-    ```
-3.  Start the application:
-    ```bash
-    python app.py
-    ```
-    *(The application starts on `http://127.0.0.1:8000` by default.)*
+---
+
+## ✨ Features
+
+* ✂️ Shorten long links with just one click
+* 🏷️ Add a custom alias (like `/my-link`)
+* 📊 Track how many times your short link has been clicked
+* 📱 Generate a QR code for easy mobile sharing
+
+---
+
+## 🔮 What’s next
+
+* 🌍 Make it work across multiple devices
+* 🛠️ Add a small API for developers
+* 📈 Add more detailed analytics and stats
+
+---
+
+This project is just a fun little tool I built while learning more about **Flask** and web back-ends.
+Feel free to fork it, play around with the code, or use it as a starting point for your own projects 🚀
