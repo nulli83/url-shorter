@@ -1,4 +1,5 @@
-<img src="https://raw.githubusercontent.com/nulli83/url-shorter-Local/main/image.png" width="500" alt="Bildtext">
+<img src="https://raw.githubusercontent.com/nulli83/url-shorter-Local/main/Screenshot%202025-10-29%20132245.png" width="500" alt="Skärmdump">
+
 # 🔗 URL Shorter
 
 A small and simple URL shortener built with **Python + Flask**.
