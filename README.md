@@ -1,3 +1,4 @@
+<img src="https://raw.githubusercontent.com/nulli83/url-shorter-Local/main/image.png" width="500" alt="Bildtext">
 # 🔗 URL Shorter
 
 A small and simple URL shortener built with **Python + Flask**.
